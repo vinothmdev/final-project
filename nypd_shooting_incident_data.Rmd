@@ -1,0 +1,155 @@
+---
+title: "NYPD Shooting Incident Data"
+author: "VM"
+date: "2023-10-09"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# NYPD Shooting Incident Data Analysis and Model
+
+```{r}
+library(tidySEM)
+library(lavaan)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(PerformanceAnalytics)
+```
+
+## Loading the Data
+
+The data is loaded from the link [data.gov](https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic)
+
+```{r}
+data <- read.csv("./NYPD_Shooting_Incident_Data__Historic_.csv")
+glimpse(data)
+```
+## Exploratory Data Analysis
+
+EDA - Exploratory data analysis is the first step in data science process to understand the data in hand.  The basic step is identify the integrity of the data, whether it has all necessary information, data types, missing values and number of columns and records.
+
+`glimpse` function from `dplyr` package gives a short summary view of high level data loaded into data frame.
+
+This indicates that we have 21 different dimensions (columns) and 27, 312 observations (rows).
+
+### Filter required columns
+
+Filtering key columns of interest to get more insite about the data
+
+```{r table2, echo=FALSE, message=FALSE, warnings=FALSE, results='asis'}
+table_types <- "
+| Column        | Description           | Data Type  |
+|---------------|:-------------:|------:|
+|OCCUR_DATE| Incident Date | Date format mm/dd/yyyy |
+|OCCUR_TIME| Incident Time | Time format HH:mm:ss |
+|BORO| Borough in which a crime occurred | string |
+|STATISTICAL_MURDER_FLAG |field that indicates whether a homicide is considered to be a statistical murder|boolean|
+|PERP_AGE_GROUP|perpetrator age group| range string |
+|PERP_SEX| perpetrator sex | string |
+|PERP_RACE|perpetrator race | string |
+|VIC_AGE_GROUP| victim age group | string | 
+|VIC_SEX| victim age group | string | 
+|VIC_RACE|victim age group | string | 
+|Latitude| Latitude | number |
+|Longitude| Longitude| number |
+"
+cat(table_types)
+```
+
+```{r}
+data[data==""]<-NA
+data_filtered <- data %>% select(OCCUR_DATE, OCCUR_TIME, BORO,STATISTICAL_MURDER_FLAG,
+                                 PERP_AGE_GROUP, PERP_SEX, PERP_RACE,
+                                 VIC_AGE_GROUP, VIC_SEX, VIC_RACE, Latitude, Longitude) %>%
+                      mutate(PERP_AGE_GROUP = ifelse(is.na(PERP_AGE_GROUP), 'unknown', PERP_AGE_GROUP)) %>%
+                      mutate(PERP_SEX = ifelse(is.na(PERP_SEX), 'unknown', PERP_SEX)) %>%
+                      mutate(PERP_RACE = ifelse(is.na(PERP_RACE), 'unknown', PERP_RACE))
+data_filtered$STATISTICAL_MURDER_FLAG_INT <- as.integer(as.logical(data_filtered$STATISTICAL_MURDER_FLAG))
+head(data_filtered)
+```
+
+### Visualizing the Incidents
+
+```{r}
+g <- ggplot(data_filtered, aes(x = BORO)) +
+  geom_bar() +
+  labs(title = "Boroughs of New York City",
+       x = "Boroughs of New York City",
+       y = "No. of Incidents") +
+  theme_minimal()
+g
+```
+
+```{r}
+map <- data_filtered %>%
+          ggplot(aes(x=Longitude, y=Latitude, col=BORO)) +
+          geom_point() +
+          labs(title = "Shooting Incident Map",
+                  x = "Longitude",
+                  y = "Latitude")
+map
+```
+## Feature Selection before modeling
+
+This is a open end problem we are not expected to produce a particular model.  So try to make it simple but still cover the aspects of DS project.  I wanted to make a simple assumption about the goal.
+
+The idea is to find whether a homicide is considered to be a statistical murder or based on the available parameters.
+
+As data and time does not seems to be effectively not a deciding factor to consider homicide as murder, I am skipping them.  And also Longitude and Latitude of too granular instead Borough can give a better clustering so I am choosing that as one of the factor.  Then I want to see if the race or sex of the perpetrator or victim plays a role.
+
+This analysis is not to draw any conclusion or to make a point of view this is just an approach for this problem.
+
+## Basic Model
+
+```{r}
+# Logistics Regression 
+glm.fit <- glm(STATISTICAL_MURDER_FLAG_INT ~ BORO +
+                                 PERP_AGE_GROUP + PERP_SEX + PERP_RACE +
+                                 VIC_AGE_GROUP + VIC_SEX + VIC_RACE, data = data_filtered, family = binomial)
+summary(glm.fit)
+```
+
+## Model interpretation
+
+Due to high unknowns in the perpetrator factors like sex, age group and race it obviously visible that it came as on one of the significant factor.  So it should be added like a indicator variable.
+
+Now lets try with out them
+
+## Second model without perpetrator variables
+
+```{r}
+# Logistics Regression 
+glm.fit <- glm(STATISTICAL_MURDER_FLAG_INT ~ BORO +
+                 VIC_AGE_GROUP + VIC_SEX + VIC_RACE,
+               data = data_filtered, family = binomial)
+summary(glm.fit)
+```
+## Model interpretation
+
+Even though Manhattan has less incidents then Brooklyn it appears to be one of the significant factor, indicating most of the homicides in Manhattan are turned out to be classified as not murders.  Lets see that in numbers
+
+Based on the blow bar chart we can see Manhattan has lowest percentage compared to other Boroughs.
+
+```{r}
+data_filtered %>%
+  count(BORO, STATISTICAL_MURDER_FLAG) %>%       
+  group_by(BORO) %>%
+  mutate(pct= prop.table(n) * 100) %>%
+  ggplot() + aes(BORO, pct, fill=STATISTICAL_MURDER_FLAG) +
+  geom_bar(stat="identity") +
+  ylab("Number of Incidents") +
+  geom_text(aes(label=paste0(sprintf("%1.1f", pct),"%")),
+            position=position_stack(vjust=0.5)) +
+  ggtitle("Boroughs vs murder Flag") +
+  theme_bw()
+```
+## conclusion
+
+We can keep exploring various aspects by the objective here is to demonstract the various steps.  So I am limiting to only this.  This also cover more than one visualization as required for the assignment.
