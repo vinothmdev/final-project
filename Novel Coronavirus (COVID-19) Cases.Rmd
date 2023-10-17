@@ -77,7 +77,6 @@ p <- df_wayne %>%
 
 p <- ggplotly(p)
 p
-phet(df)
 ```
 
 ## Model using Prophet
