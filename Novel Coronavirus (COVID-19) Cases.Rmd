@@ -1,0 +1,97 @@
+---
+title: 'Novel Coronavirus (COVID-19) Data Analysis'
+author: "VM"
+date: "2023-10-16"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+## Data Source
+
+This data is taken from the "COVID-19 Data Repository by the Center for Systems Science and Engineering (CSSE) at Johns Hopkins University" [git repo](https://github.com/CSSEGISandData/COVID-19)
+
+Ensure you have installed the required libaries.
+
+```{r library, message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(tidyr)
+library(prophet)
+library(data.table)
+library(dplyr)
+library(plotly)
+library(hrbrthemes)
+```
+
+## Load Data
+
+Data is directly loaded from the source git repo.  While running locally ensure internet access and the repo url is correct
+
+```{r}
+us_confirmed_df <- read_csv('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv') 
+```
+
+## Extract Required Data
+
+Here I removed the columns with redundant information, because we use US only data it is not required to keep that as column, as combined key column has, county, state and country I used a required column and also transpose data to give observation for data in each row.
+
+
+```{r}
+data = us_confirmed_df[-c(1:10)]
+df <- transpose(data)
+rownames(df) <- colnames(data)
+colnames(df) <- rownames(data)
+names(df) <- lapply(df[1, ], as.character)
+df <- df[-1, ]
+head(df)
+```
+
+## Inspect for Wayne county
+
+
+```{r}
+df_wayne = df['Wayne, Michigan, US']
+df_wayne$'Wayne, Michigan, US' = as.numeric(as.character(df_wayne$'Wayne, Michigan, US'))
+summary(df_wayne)
+```
+
+
+```{r}
+df_wayne$ds <- row.names(df)
+
+df_wayne$ds <- as.Date(df_wayne$ds, format='%m/%d/%y')
+df_wayne$y <- df_wayne$'Wayne, Michigan, US'
+p <- df_wayne %>%
+  ggplot( aes(x=ds, y=y)) +
+    geom_area(fill="#69b3a2", alpha=0.5) +
+    geom_line(color="#69b3a2") +
+    ylab("Confirmed Cases") +
+    theme_ipsum()
+
+p <- ggplotly(p)
+p
+phet(df)
+```
+
+## Model using Prophet
+
+```{r}
+m <- prophet(df_wayne)
+future <- make_future_dataframe(m, periods = 365)
+tail(future)
+forecast <- predict(m, future)
+tail(forecast[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+plot(m, forecast)
+```
+## Investigating Time Series
+
+```{r}
+prophet_plot_components(m, forecast)
+```
